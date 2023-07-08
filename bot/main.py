@@ -76,6 +76,7 @@ def main():
         'image_prices': [float(i) for i in os.environ.get('IMAGE_PRICES', "0.016,0.018,0.02").split(",")],
         'transcription_price': float(os.environ.get('TRANSCRIPTION_PRICE', 0.006)),
         'bot_language': os.environ.get('BOT_LANGUAGE', 'en'),
+        'timeweb': os.environ.get('TIMEWEB', ''),
     }
 
     # Setup and run ChatGPT and Telegram bot

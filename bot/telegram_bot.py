@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import json
+import requests
 
 from uuid import uuid4
 from telegram import BotCommandScopeAllGroupChats, Update, constants
@@ -185,6 +187,85 @@ class ChatGPTTelegramBot:
         await update.effective_message.reply_text(
             message_thread_id=get_thread_id(update),
             text=localized_text('reset_done', self.config['bot_language'])
+        )
+
+    async def mine(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Server controls
+        """
+        if not await is_allowed(self.config, update, context):
+            logging.warning(f'User {update.message.from_user.name} (id: {update.message.from_user.id}) '
+                            f'is not allowed to reset the conversation')
+            await self.send_disallowed_message(update, context)
+            return
+
+        logging.info(f'Resetting the conversation for user {update.message.from_user.name} '
+                     f'(id: {update.message.from_user.id})...')
+
+        mode = message_text(update.message)
+
+        command_data = {
+            'cpu': 2,
+            'ram': 2,
+            'error': True,
+            'mine_server_start': True
+        }
+
+        if mode == "full":
+            command_data['ram'] = 9
+        elif mode == "base":
+            command_data['ram'] = 3
+        elif mode.startswith("config"):
+            command_params = mode.split(' ')
+            if len(command_params) != 4 \
+                or not command_params[1].isdigit()\
+                or not command_params[2].isdigit()\
+                or command_params[3] not in ['on', 'off']:
+                await update.effective_message.reply_text(
+                    message_thread_id=get_thread_id(update),
+                    text='mine config cpu ram on/off'
+                )
+                return
+            
+            command_data['cpu'] = int(command_params[1])
+            command_data['ram'] = int(command_params[2])
+            command_data['mine_server_start'] = True if command_params[3] == "on" else False
+        else:
+            await update.effective_message.reply_text(
+                message_thread_id=get_thread_id(update),
+                text='full or base'
+            )
+            return
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + self.config['timeweb'],
+        }
+
+        data = {
+            "configurator": {
+                "ram": 1024 * command_data['ram'],
+                "cpu": command_data['cpu']
+            }
+        }
+
+        response = requests.patch('https://api.timeweb.cloud/api/v1/servers/1615641', headers=headers, data=json.dumps(data))
+
+        if response.status_code == 200:
+            response_text = "Done"
+        else:
+            response_text = json.dumps(response.json(), indent=2)
+
+        # TODO: 
+        # скрипт запуска бота и сервера, опирающийся на конфиг файл
+        # внемение изменений в конфиг файл и конфигурацию самого сервера
+        #
+
+
+
+        await update.effective_message.reply_text(
+            message_thread_id=get_thread_id(update),
+            text=response_text
         )
 
     async def image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -749,6 +830,7 @@ class ChatGPTTelegramBot:
         application.add_handler(CommandHandler('start', self.help))
         application.add_handler(CommandHandler('stats', self.stats))
         application.add_handler(CommandHandler('resend', self.resend))
+        application.add_handler(CommandHandler('mine', self.mine))
         application.add_handler(CommandHandler(
             'chat', self.prompt, filters=filters.ChatType.GROUP | filters.ChatType.SUPERGROUP)
         )
